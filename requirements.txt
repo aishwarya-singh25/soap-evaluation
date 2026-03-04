@@ -1,0 +1,8 @@
+scikit-learn
+pandas
+nltk
+sentence-transformers
+bert-score
+rouge-score
+streamlit
+deepeval
