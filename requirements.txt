@@ -6,3 +6,4 @@ bert-score
 rouge-score
 streamlit
 deepeval
+openai

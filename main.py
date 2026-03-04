@@ -1,5 +1,5 @@
 import streamlit as st
-from src.helper import preprocess_text, compute_rouge, compute_deepeval
+from src.helper import preprocess_text, compute_rouge, compute_deepeval, chat_with_openai
 
 
 def main_evaluate(patient_convo: str, soap_notes: str) -> dict:
@@ -55,6 +55,79 @@ def run_streamlit_app():
 			st.write(f"Score: {deepeval.get('score')}")
 			st.write("Reason:")
 			st.text(deepeval.get("reason"))
+		# persist results and show chat UI on subsequent reruns
+		st.session_state.last_results = results
+		st.session_state.show_chat = True
+		if "chat_history" not in st.session_state:
+			st.session_state.chat_history = []
+
+	# If a chat session has been started (after a successful evaluation), render the chat UI.
+	if st.session_state.get("show_chat"):
+		results = st.session_state.get("last_results", {})
+
+		# Ensure there's a system starter message summarizing the last results
+		if "chat_history" not in st.session_state:
+			st.session_state.chat_history = []
+
+		if not any(m.get("role") == "system" for m in st.session_state.chat_history):
+			summary_lines = []
+			try:
+				rouge = results.get("rouge", {})
+				rouge_summary = ", ".join([f"{k}: f={v['fmeasure']:.3f}" for k, v in rouge.items()])
+				summary_lines.append(f"ROUGE summary: {rouge_summary}")
+			except Exception:
+				pass
+
+			try:
+				deepeval = results.get("deepeval")
+				if deepeval and "score" in deepeval:
+					summary_lines.append(f"DeepEval score: {deepeval.get('score')}")
+			except Exception:
+				pass
+
+			if summary_lines:
+				system_msg = {"role": "system", "content": "The following evaluation was just produced for a generated SOAP note: " + " | ".join(summary_lines)}
+			else:
+				system_msg = {"role": "system", "content": "The following evaluation was just produced for a generated SOAP note."}
+
+			st.session_state.chat_history.insert(0, system_msg)
+
+		# render chat UI
+		st.markdown("---")
+		st.subheader("Chat about this evaluation")
+
+		chat_container = st.container()
+
+		with chat_container:
+			for msg in st.session_state.chat_history:
+				role = msg.get("role", "user")
+				content = msg.get("content", "")
+				if role == "system":
+					st.info(content)
+				elif role == "user":
+					st.markdown(f"**You:** {content}")
+				else:
+					st.markdown(f"**Assistant:** {content}")
+
+			user_input = st.text_input("Ask a question about the evaluation:", key="chat_input")
+			col1, col2 = st.columns([1, 1])
+			with col1:
+				# give the buttons explicit keys so they persist reliably between reruns
+				if st.button("Send", key="send_btn") and user_input:
+					st.session_state.chat_history.append({"role": "user", "content": user_input})
+					messages = st.session_state.chat_history.copy()
+					with st.spinner("Getting assistant response..."):
+						resp = chat_with_openai(messages)
+
+					if "error" in resp:
+						st.error(resp["error"])
+					else:
+						reply = resp.get("reply", "")
+						st.session_state.chat_history.append({"role": "assistant", "content": reply})
+						
+			with col2:
+				if st.button("End chat", key="end_chat_btn"):
+					st.session_state.chat_history = []
         
 
 if __name__ == "__main__":
