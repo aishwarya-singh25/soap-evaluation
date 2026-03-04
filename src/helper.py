@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+import openai
 from typing import List, Tuple, Dict
 
 import re
@@ -19,6 +20,12 @@ except Exception:
     nltk.download("stopwords")
 
 STOPWORDS = set(stopwords.words("english"))
+
+# load env early so OpenAI key is available if present
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if OPENAI_API_KEY:
+    openai.api_key = OPENAI_API_KEY
 
 
 def preprocess_text(text: str) -> str:
@@ -83,6 +90,33 @@ def compute_deepeval(ref: str, cand: str) -> Dict[str, object]:
 
     except Exception as e:
         return {"error": f"deepeval.evaluate failed: {type(e).__name__}: {e}"}
+
+
+def chat_with_openai(messages: list, model: str = "gpt-4o") -> Dict[str, object]:
+    """Send a chat-style request to OpenAI and return the assistant reply.
+
+    messages should be a list of dicts like [{"role": "system|user|assistant", "content": "..."}, ...]
+
+    Returns a dict: {"reply": str} or {"error": str} on failure.
+    """
+    if not OPENAI_API_KEY:
+        return {"error": "OpenAI API key not found. Set OPENAI_API_KEY in the environment."}
+
+    try:
+        client = openai.OpenAI()
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=600,
+            temperature=0.2,
+        )
+
+        # get assistant message
+        assistant_msg = resp.choices[0].message.content
+        return {"reply": assistant_msg}
+
+    except Exception as e:
+        return {"error": f"OpenAI API call failed: {type(e).__name__}: {e}"}
 
 
 
